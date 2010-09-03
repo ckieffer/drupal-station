@@ -1,0 +1,46 @@
+<?php
+// $Id: station_nowplaying.install,v 1.14 2010/01/22 00:00:00 cmk Exp $
+
+/**
+ * Implementation of hook_schema().
+ */
+function station_nowplaying_install() {
+  //drupal_install_schema('station_nowplaying');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function station_nowplaying_uninstall() {
+  //drupal_uninstall_schema('station_nowplaying');
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function station_nowplaying_schema() {
+  $schema['station_nowplaying'] = array(
+    'description' => t('Store track information and when it was played.'),
+    'fields' => array(
+      'aired' => array(
+        'description' => 'The Unix timestamp when the track was aired.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'playlist_nid' => array(
+        'description' => t("The playlist {node}.nid."),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'indexes' => array(
+      'station_nowplaying_aired' => array('aired'),
+    ),
+  );
+
+  return $schema;
+}

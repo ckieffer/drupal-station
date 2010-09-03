@@ -1,0 +1,41 @@
+.station-nowplaying {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.station-nowplaying li {
+  list-style: none;
+  margin: 0 0 .8em 0;
+  padding-left: 0;
+}
+
+.station-nowplaying span {
+  padding: 0 .4em 0 0;
+}
+
+.station-nowplaying .artist {
+  font-weight: bold;
+}
+
+.station-nowplaying .song {
+  font-style: oblique;
+}
+
+.station-nowplaying a.buy-button {
+	border: 1px solid #999;
+	color: #999;
+	margin-right: .5em;
+	padding: 0 3px 1px 3px;
+}
+
+.station-nowplaying a.buy-button:hover {
+	background: #ddd;
+	border: 1px solid #333;
+	color: #000;
+}
+
+.station-nowplaying a.buy-button:hover {
+	color: #000;
+	text-decoration: none;
+}

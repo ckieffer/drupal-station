@@ -1,0 +1,11 @@
+; $Id: station_nowplaying.info,v 1.5 2010/1/22 00:00:00 cmk Exp $
+name = Station Now Playing
+description = Provides a list of recently playing tracks as a block and page.
+package = Station
+core = 6.x
+php = 5.2
+dependencies[] = station
+dependencies[] = station_schedule
+dependencies[] = station_catalog
+dependencies[] = station_playlist
+dependencies[] = date

@@ -1,0 +1,433 @@
+<?php
+// $Id: station_nowplaying.module,v 1.24 2010/01/28 00:00:00 cmk Exp $
+
+/**
+ * Implementation of hook_help().
+ */
+function station_nowplaying_help($path, $arg) {
+  switch ($path) {
+    case 'admin/settings/station/nowplaying':
+      return t("Provide details about your Shoutcast server for the nowplaying module.");
+  }
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function station_nowplaying_perm() {
+  return array(
+    'administer station nowplaying',
+  );
+}
+
+/**
+ * Implementation of hook_access().
+ */
+function station_nowplaying_access($op, $node, $account) {
+  if (user_access('administer station nowplaying', $account)) {
+    return TRUE;
+  }
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function station_nowplaying_menu() {
+  $items['admin/settings/station/nowplaying'] = array(
+          'title' => 'Now Playing',
+          'page callback' => 'drupal_get_form',
+          'page arguments' => array('station_nowplaying_admin_settings'),
+          'access arguments' => array('administer site configuration'),
+          'file' => 'station_nowplaying.admin.inc',
+          'type' => MENU_LOCAL_TASK
+  );
+  $items['station/nowplaying'] = array(
+    'title' => t('Recently Played'),
+    'page callback' => 'station_nowplaying_page',
+    'access arguments' => array('access content'),
+  );
+  return $items;
+}
+
+/**
+ * Generate a recently played block
+ * @param op the operation from the URL
+ * @param delta offset
+ * @returns block HTML
+ *
+ * @todo Add 'more' link if page is present
+ */
+function station_nowplaying_block($op = 'list', $delta = 0) {
+  drupal_add_css(drupal_get_path('module', 'station_nowplaying') .'/station_nowplaying.css');
+
+  // listing of blocks, such as on the admin/block page
+  if ($op == 'list') {
+    $block[0]['info'] = t('Station recently played');
+    return $block;
+
+  } elseif ($op == 'view') {
+    // our block content
+    // content variable that will be returned for display
+    $block['content'] = '';
+    $tracks = array();
+    $block_cache = cache_get('station_nowplaying');
+
+    if ((!$block_cache) || ($block_cache->expire < time())) {
+      // fetch shoutcast song history
+      $history_url = variable_get('station_nowplaying_history_url', 0);
+      $html = station_nowplaying_gethtml();
+      if (!empty($html)) {
+        $history_html = station_nowplaying_gethistory($html);
+        $tracks = station_nowplaying_getarray($history_html);
+      }
+      // get the caching interval (in minutes) from the module's settings
+      $interval = variable_get('station_nowplaying_cachetime', 1);
+      // update the cache with the new data
+      cache_set('station_nowplaying', $tracks, 'cache',  time() + ($interval*60));
+
+    } else {
+      $tracks_cache = cache_get('station_nowplaying');
+      $tracks = $tracks_cache->data;
+    }
+
+    // generate the table and place static (not handled in unit conversion javascript) variables
+    $display_fields = variable_get('station_nowplaying_block_display_fields', array(
+        'datetime',
+        'artist',
+        'song',
+        'album',
+        'label',
+      )
+    );
+    $limit = variable_get('station_nowplaying_block_limit', 5);
+    $date_format = variable_get('station_nowplaying_block_dateformat', 'h:i');
+
+    // set up the block
+    $block['subject'] = variable_get('station_nowplaying_block_subject', '');
+
+    $block['content'] = station_nowplaying_buildlist($tracks, $display_fields, $limit, 'Y-m-d h:i:s'); //$date_format);
+    // when using checkboxes we have to cast the variable as a string?
+    //if ((string)$misc_options['more_link'] == 'more_link') {
+      $block['content'] .= '<a href="http://' . $_SERVER['HTTP_HOST'] . 
+          base_path() . 'station/nowplaying" class="more">more</a>';
+    //}
+  }
+  return $block;
+}
+
+function station_nowplaying_page() {
+  drupal_add_css(drupal_get_path('module', 'station_nowplaying') .'/station_nowplaying.css');
+
+  // our page content
+  // content variable that will be returned for display
+  $content = '';
+  $tracks = array();
+  $page_cache = cache_get('station_nowplaying_page');
+
+  if ((!$page_cache) || ($page_cache->expire < time())) {
+    // fetch shoutcast song history
+    $history_url = variable_get('station_nowplaying_history_url', 0);
+    $html = station_nowplaying_gethtml();
+    if (!empty($html)) {
+      $history_html = station_nowplaying_gethistory($html);
+      $tracks = station_nowplaying_getarray($history_html);
+    }
+    // get the caching interval (in minutes) from the module's settings
+    $interval = variable_get('station_nowplaying_cachetime', 1);
+    // update the cache with the new data
+    cache_set('station_nowplaying_page', $tracks, 'cache',  time() + ($interval*60));
+
+  } else {
+    $tracks_cache = cache_get('station_nowplaying_page');
+    $tracks = $tracks_cache->data;
+  }
+
+  $display_fields = variable_get('station_nowplaying_page_display_fields', array(
+      'datetime',
+      'artist',
+      'song',
+      'album',
+      'label',
+    )
+  );
+  $limit = variable_get('station_nowplaying_page_limit', 20);
+  $date_format = variable_get('station_nowplaying_page_dateformat', 'h:i');
+
+  // set up the page
+  $content = station_nowplaying_buildlist($tracks, $display_fields, $limit, $date_format);
+
+  return $content;
+}
+
+/**
+ * Build an HTML unordered list of recently played songs
+ * @param array $tracks
+ * @param array $display_fields
+ * @param integer $limit
+ * @param string $date_format Valid PHP date() format
+ * @return string
+ */
+function station_nowplaying_buildlist($tracks, $display_fields, $limit = 6, $date_format = 'h:i') {
+
+  date_test();
+
+  $list .= '<ul class="station-nowplaying">';
+  // Loop through the tracks to build a list
+  for ($i = 0; $i < $limit; $i++) {
+    if (!empty($tracks[$i]['song'])) {
+      $artist = $tracks[$i]['artist'];
+      $album = $tracks[$i]['album'];
+
+      $list .= '<li>';
+      $amazon_id = variable_get('amazon_custom_associate_id', '');
+      if (!empty($amazon_id)) {
+        $amazon_url = 'http://www.amazon.com/exec/obidos/redirect?tag=' . $amazon_id . '&creative=9325&camp=1789&link_code=ur2&path=external-search%3Fsearch-type%3Dss%26index%3Dmusic%26keyword%3D'
+        . $artist; //. '+' . $album;
+        $list .= '<a href="' . $amazon_url . '" class="buy-button" target="_blank" title="Buy music by '
+             . $artist . 'from Amazon.com">buy</a>';
+      }
+      if ((string)$display_fields['datetime'] == 'datetime') {
+        //$adjusted_datetime = date('Y-m-d H:i:s', adjust_datetime($tracks[$i]['timestamp']));
+        $adjusted_datetime = date('h:i', adjust_datetime($tracks[$i]['timestamp']));
+        $list .= ' <span class="datetime">' . $adjusted_datetime . '</span> ';
+      }
+      // when using checkboxes we have to cast the variable as a string?
+      if ((string)$display_fields['artist'] == 'artist') {
+        $list .= ' <span class="artist">' . $tracks[$i]['artist'] . '</span> ';
+      }
+      if ((string)$display_fields['song'] == 'song') {
+        $list .= ' <span class="song">' . $tracks[$i]['song'] . '</span> ';
+      }
+      if ((string)$display_fields['album'] == 'album') {
+        $list .= ' <span class="album">' . $tracks[$i]['album'] . '</span> ';
+      }
+      if ((string)$display_fields['label'] == 'label') {
+        $list .= ' <span class="label">' . $tracks[$i]['label'] . '</span> ';
+      }
+      $list .= '</li>';
+    }
+  }
+  $list .= '</ul>';
+  return $list;
+}
+
+/**
+ * Get a Shoutcast stream's history page
+ * @return mixed string|false
+ */
+function station_nowplaying_gethtml() {
+  $history_url = variable_get('station_nowplaying_history_url', 0);
+  $parsed_url = parse_url($history_url);
+  $domain	= isset($parsed_url['host']) ? $parsed_url['host'] : "";
+  $port	= !isset($parsed_url['port']) || empty($parsed_url['port']) ? "80" : $parsed_url['port'];
+  $path	= empty($parsed_url['path']) ? "/" : $parsed_url['path'];
+  $contents = "";
+  $domain = (substr($domain, 0, 7) == "http://") ? substr($domain, 7) : $domain;
+  if (@$fp = fsockopen($domain, $port, $errno, $errstr, 2)) {
+    fputs($fp, "GET ".$path." HTTP/1.1\r\n".
+            "User-Agent: Mozilla/4.0 (compatible; MSIE 5.5; Windows 98)\r\n".
+            "Accept: */*\r\n".
+            "Host: ".$domain."\r\n\r\n");
+    $c = 0;
+    while (!feof($fp) && $c <= 20) {
+      $contents .= fgets($fp, 4096);
+      $c++;
+    }
+    fclose ($fp);
+    return $contents;
+  }
+  return false;
+}
+
+/**
+ * Extract the history table's rows
+ * @param string $html
+ * @return string
+ */
+function station_nowplaying_gethistory($html) {
+  preg_match('|<table border=0 cellpadding=2 cellspacing=2>(.*?)</table>|', $html, $matches);
+  return $matches[0];
+}
+
+/**
+ * Extract time, artist, song, album, and label info from the history table's rows
+ * @param string $html Contents of the song history HTML table
+ * @return array Array of shoutcast play history tracks
+ */
+function station_nowplaying_getarray($html) {
+  $array = array();
+  // Break out individual tracks
+  $rows = split('</tr><tr>', $html);
+  // Loop through the tracks, skip the first row which contains table headings
+  for ($i = 1; $i < count($rows); $i++) {
+    // Separate track time from info
+    $cell = explode('</td><td>', $rows[$i]);
+    // Break out track info, strip 'Current Song' from track info
+    $track = preg_replace('/Current Song/', '', explode(' - ', strip_tags($cell[1])));
+    $timestamp = station_nowplaying_timestamp(strip_tags($cell[0]));
+    $artist = $track[0];
+    $song = $track[1];
+    $album = $track[2];
+    $label = $track[3];
+    // Filter out songs containing specified filters
+    $filter_flag = false;
+    $filters_string = variable_get('station_nowplaying_filters', '');
+    $filters = explode(';', $filters_string);
+    // Flag songs to be filtered
+    foreach ($filters as $k => $filter) {
+      if (preg_match("/$filter/", $song)) {
+        $filter_flag = true;
+      }
+    }
+    // Add the song to the array
+    if (!$filter_flag) {
+      $array[] = array(
+        'timestamp' => $timestamp,
+        'artist' => $artist,
+        'song' => $song,
+        'album' => $album,
+        'label' => $label,
+      );
+    }
+  }
+  return $array;
+}
+
+/**
+ * Return a timezone adjusted played at timestamp for a track
+ * @param string $time Shoutcast track played time (HH:MM:SS)
+ * @return integer Unix timestamp, adjusted to Drupal server's timezone
+ */
+function station_nowplaying_timestamp($time) {
+  // Get the offset between the user's and shoutcast server TZ, if any
+  $shoutcast_tz = variable_get('station_nowplaying_shoutcast_timezone', '');
+  if (!empty($shoutcast_tz)) {
+    $origin_tz = variable_get('date_default_timezone', 0);
+    if (!is_numeric($shoutcast_tz)) {
+      $remote_dtz = new DateTimeZone($shoutcast_tz);
+      $remote_dt = new DateTime("now", $remote_dtz);
+      $offset = $origin_tz - $remote_dtz->getOffset($remote_dt);
+    } else {
+      $offset = $origin_tz - $shoutcast_tz;
+    }
+  } else {
+    $offset = 0;
+  }
+  // Add the date to the shoutcast time, default to today's date, convert to timestamp
+  $shoutcast_timestamp = strtotime(date('Y-m-d ') . $time);
+  // Adjust the date for tracks played near midnight. If the server hour is less
+  // than shoutcast track hour, set shoutcate_date to server date minus one day.
+  $server_hr = date('H', time());
+  $shoutcast_hr = substr($time, 1, 1);
+  if ($server_hr < $shoutcast_hr) {
+    $shoutcast_timestamp = $shoutcast_timestamp - 86400;
+  }
+  // Add offset to adjust the shoutcast timestamp to Drupal server time
+  $timestamp = $shoutcast_timestamp + $offset;
+  return $timestamp;
+}
+
+/**
+ * 
+ * @param string $timestamp
+ * @return string
+ */
+function adjust_datetime($timestamp) {
+  // First get the user's (or system default) timezone info
+  $user_timezone_name = date_default_timezone_name(TRUE);
+
+  $datetime = date('Y-m-d H:i:s', $timestamp); // Track date
+  // Convert the user entered date into a PHP 5 DateTime object
+  $local_date = new DateTime($datetime);
+  // Reformat the user entered date into an ISO date that date_make_date() will accept
+  $iso_date_string = date_format_date($local_date, 'custom', 'Y-m-d\TH:i:s');
+  // Create a DateTime object with the user's timezone info
+  $utc_date = date_make_date($iso_date_string, $user_timezone_name, DATE_DATETIME);
+  // Change the timezone to UTC
+  date_timezone_set($utc_date, timezone_open('UTC'));
+  // Format the UTC version of the DateTime for use in node->save()
+  $utc_date_string = date_format_date($utc_date, 'custom', 'Y-m-d\TH:i:s');
+  // convert to timestamp
+  $adjusted_timestamp = strtotime($utc_date_string);
+  
+  //date_difference
+  // ============================================
+  // now, i save it to the database as timestamp
+  // ============================================
+
+  // ===================================================================================
+  // and now, i would like to get to from the database as timestamp and convert it back
+  // ===================================================================================
+
+  // convert back to string
+  $new_date = date('Y-m-d\TH:i:s', $adjusted_timestamp);
+  // ok, so now get back to the user timezone
+  $type = DATE_DATETIME;
+  $new_date = date_make_date($new_date, 'UTC', $type);
+  date_timezone_set($new_date, timezone_open($user_timezone_name));
+  $back = date_format_date($new_date, 'custom', 'Y-m-d H:i:s');
+
+  return $timestamp;
+//  return "<br>
+//    user_timezone_name:$user_timezone_name<br>
+//    iso_date_string:$iso_date_string<br>
+//    utc_date_string:$utc_date_string<br>
+//    back:$back<br>"; //$utc_date_string;
+}
+
+function date_test() {
+// First get the user's (or system default) timezone info
+  $user_timezone_name = date_default_timezone_name(TRUE);
+  //drupal_set_message('user timezone name = '. $user_timezone_name);
+
+  $text_date = date('Y-m-d H:m:s');
+  //$text_date = '2010-02-14 07:00:00';
+  //drupal_set_message('start date = '. $text_date);
+
+  // Convert the user entered date into a PHP 5 DateTime object
+  $local_date = new DateTime($text_date);
+
+  // Reformat the user entered date into an ISO date that date_make_date() will accept
+  $iso_date_string = date_format_date($local_date, 'custom', 'Y-m-d\TH:i:s');
+  //drupal_set_message('iso date_string = '. $iso_date_string);
+
+  // Create a DateTime object with the user's timezone info
+  $utc_date = date_make_date($iso_date_string, $user_timezone_name, DATE_DATETIME);
+
+  // Change the timezone to UTC
+  date_timezone_set($utc_date, timezone_open('UTC'));
+
+  // Format the UTC version of the DateTime for use in node->save()
+  $utc_date_string = date_format_date($utc_date, 'custom', 'Y-m-d\TH:i:s');
+  //drupal_set_message('utc date string = '. $utc_date_string);
+
+  // convert to timestamp
+  $timestamp = strtotime($utc_date_string);
+  //drupal_set_message('timestamp = '. $timestamp);
+
+// ============================================
+
+// now, i save it to the database as timestamp
+
+// ============================================
+
+// *************************************************************************************
+
+// ===================================================================================
+
+// and now, i would like to get to from the database as timestamp and convert it back
+
+// ===================================================================================
+
+  // convert back to string
+  $new_date = date('Y-m-d\TH:i:s', $timestamp);
+  //drupal_set_message('timestamp converted back = '. $new_date);
+
+  // ok, so now get back to the user timezone
+  $type = DATE_DATETIME;
+
+  $new_date = date_make_date($new_date, 'UTC', $type);
+  date_timezone_set($new_date, timezone_open($user_timezone_name));
+  $back = date_format_date($new_date, 'custom', 'Y-m-d H:i:s');
+  //drupal_set_message('back to the start = '. $back);
+}
