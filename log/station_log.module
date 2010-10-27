@@ -1,0 +1,226 @@
+<?php
+// $Id: station_log.module,v 1.24 2010/01/28 00:00:00 thumb Exp $
+
+/**
+ * @todo Recently played block with admin settings (number of items). Include Ajax update of list.
+ * @todo Recently played page with admin settings. Include Ajax update of list.
+ * @todo Validate song names against MusicBrainz.
+ * @todo Create a "song not found" in MusicBrainz report.
+ * @todo Handle multiple schedules.
+ * @todo Set $node->uid to 0 or 1. Search for uid used by others for cron operations.
+ * @todo Look into getting setting genre for station_catalog items, does MusicBrainz provide genre?
+ */
+
+/**
+ * Implementation of hook_help().
+ */
+function station_log_help($path, $arg) {
+  switch ($path) {
+    case 'admin/settings/station/log':
+      return t("Logs track metadata from SHOUTcast streams.");
+  }
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function station_log_perm() {
+  return array(
+    'administer station log',
+    'access station log content'
+  );
+}
+
+/**
+ * Implementation of hook_access().
+ */
+function station_log_access($op, $node, $account) {
+  if (user_access('administer station log', $account)) {
+    return TRUE;
+  }
+  switch ($op) {
+    case 'view':
+      return user_access('view station log content', $account);
+  }
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function station_log_menu() {
+  $items['admin/settings/station/log'] = array(
+          'title' => 'Log',
+          'page callback' => 'drupal_get_form',
+          'page arguments' => array('station_log_admin_settings'),
+          'access arguments' => array('administer site configuration'),
+          'file' => 'station_log.admin.inc',
+          'type' => MENU_LOCAL_TASK
+  );
+  $items['station/log/update'] = array(
+          'title' => 'Update the station log',
+          'description' => 'Update the station log',
+          'page callback' => 'station_log_update_page',
+          'access arguments' => array('access station log content'),
+          'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+/**
+ * Implementation hook_cron().
+ */
+function station_log_cron() {
+  
+}
+
+/**
+ * Get the most recent timestamp for logged tracks.
+ *
+ * @param
+ *   A station schedule nid.
+ *
+ * @return
+ *   UNIX timestamp
+ */
+function station_log_get_max_timestamp($schedule_nid) {
+  $result = db_query('SELECT MAX(timestamp) AS timestamp FROM {station_log} WHERE schedule_nid = %d', $schedule_nid);
+  $array = db_fetch_array($result);
+  return $array['timestamp'];
+}
+
+/**
+ * Pull an array of tracks from a SHOUTcast song history object
+ *
+ * @return
+ *   An associative track history array
+ */
+function station_log_get_shoutcast_tracks() {
+  $xml = shoutcast_get_xml();
+  $songhistory = $xml->SONGHISTORY;
+  foreach($songhistory->SONG as $key => $track) {
+    $parts = explode(' - ', $track->TITLE);
+    // @todo Admin setting to define track info order, default order: artist, song, album, label
+    $tracks[(int) $track->PLAYEDAT] = array(
+        'artist' => trim($parts[0]),
+        'song' => trim($parts[1]),
+        'album' => trim($parts[2]),
+        'label' => trim($parts[3]),
+        'raw' => (string) $track->TITLE,
+      );
+  }
+  return $tracks;
+}
+
+/**
+ * Get album id from station catalog, if the album doesn't exist, add it.
+ *
+ * @param $track
+ *   Track info, including artist, album, song, and label.
+ *
+ * @return
+ *   A station_catalog album's nid.
+ */
+function station_log_album($track) {
+  // Do we have the album in the catalog already?
+  $node = db_result(db_query("SELECT nid, artist, album, year, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
+
+  // If not, insert this as a new album
+  if (!$catalog_item->nid) {
+    if (!empty($track['artist']) && !empty($track['album'])) {
+      $node = new stdClass();
+      $node->type = 'station_album';
+      $node->title = $track['artist'] . ' - ' . $track['album'];
+      $node->uid = 1;
+		  $node->album['artist'] = $track['artist'];
+		  $node->album['album'] = $track['album'];
+		  $node->album['label'] = $track['label'];
+      $node->album['number'] = station_catalog_album_next_number();
+      $node = station_catalog_update_album_from_musicbrainz($node);
+      node_save($node);
+    }
+  }
+  return (!empty($node->nid)) ? $node->nid : false;
+}
+
+/**
+ * Get song's played from the stream and log them.
+ *
+ * @param
+ *   A station schedule nid.
+ * 
+ * @return
+ *   The number tracks logged.
+ */
+function station_log_new_tracks($schedule_nid) {
+  // Get SHOUTcast SONGHISTORY, reverse the order and preserve the keys
+  $tracks = array_reverse(station_log_get_shoutcast_tracks(), true);
+
+  // Get the last timestamp logged from station_log
+  // We'll only log tracks since then
+  $max_timestamp = station_log_get_max_timestamp($schedule_nid);
+
+  // Count the number of songs logged
+  $tracks_logged = 0;
+  
+  // Loop through and log each new track
+  foreach ($tracks as $timestamp => $track) {
+    if (empty($max_timestamp) || $timestamp > $max_timestamp) {
+      // Get the album nid from station catalog, add it if new
+      $track['catalog_nid'] = station_log_album($track);
+
+      // Log the track id
+      if ($track['catalog_nid']) {
+        station_log_add($schedule_nid, $timestamp, $track);
+        $tracks_logged++;
+      }
+    }
+  }
+  watchdog('station_log', "Logged $tracks_logged tracks.", NULL, WATCHDOG_INFO);
+
+  return $tracks_logged;
+}
+
+/**
+ * Add a track to station_log.
+ *
+ * @param
+ *   A station schedule nid.
+ * @param $timestamp
+ *    The date and time the track was played as a Unix timestamp.
+ * @param $track
+ *    An array containing track info.
+ */
+function station_log_add($schedule_nid, $timestamp, $track) {
+  $log_track_nid = db_result(db_query("SELECT log_track_nid FROM {station_log_track} WHERE catalog_nid = %d AND title = '%s'", $track['catalog_nid'], $track['title']));
+
+  if (!$log_track_nid) {
+    $log_track_nid = station_log_track_add($track);
+  }
+  if ($log_track_nid > 0) {
+    db_query("INSERT INTO {station_log} (schedule_nid, timestamp, log_track_nid) VALUES (%d, %d, %d)", $schedule_nid, $timestamp, $log_track_nid);
+  }
+}
+
+/**
+ * Add a track to station_log_track.
+ *
+ * @param $track
+ *   An array containing an individual track's catalog_nid and song title.
+ *
+ * @return
+ *   The logged track's log_track_nid.
+ */
+function station_log_track_add($track) {
+  db_query("INSERT INTO {station_log_track} (catalog_nid, title) VALUES (%d, '%s')", $track['catalog_nid'], $track['song']);
+  return db_last_insert_id('drpl_station_log_track', 'log_track_nid');
+}
+
+/**
+ * Provide a page to call from cron to update the log without running hook_cron()
+ */
+function station_log_update_page() {
+  // Get the first web stream found to set the default shoutcast history url
+  $schedule_nid = variable_get('station_schedule_default', 0);
+  $tracks_logged = station_log_new_tracks($schedule_nid);
+  return t("Added $tracks_logged tracks to the station log.");
+}

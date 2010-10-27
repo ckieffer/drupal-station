@@ -1,0 +1,10 @@
+; $Id: station_log.info,v 1.5 2010/1/22 00:00:00 cmk Exp $
+name = Station Log
+description = Logs track metadata from SHOUTcast streams (currently only the default schedule is logged).
+package = Station
+core = 6.x
+php = 5.2
+dependencies[] = station
+dependencies[] = station_schedule
+dependencies[] = station_catalog
+dependencies[] = shoutcast

@@ -1,0 +1,82 @@
+<?php
+// $Id: station_log.install,v 1.14 2010/01/22 00:00:00 cmk Exp $
+
+/**
+ * Implementation of hook_schema().
+ */
+function station_log_install() {
+  drupal_install_schema('station_log');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function station_log_uninstall() {
+  drupal_uninstall_schema('station_log');
+}
+
+/**
+ * Implementation of hook_schema().
+ * @todo Check whether nid need's auto_increment, set index properly
+ * @todo Check schedule_nid value.
+ */
+function station_log_schema() {
+  $schema['station_log'] = array(
+    'description' => t('Store track information and when it was played.'),
+    'fields' => array(
+      'schedule_nid' => array(
+        'description' => t("The schedule's nid for this track."),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'timestamp' => array(
+        'description' => 'The Unix timestamp when the track was played.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'log_track_nid' => array(
+        'description' => t("The played track's nid."),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('schedule_nid', 'timestamp'),
+
+  );
+  $schema['station_log_track'] = array(
+    'description' => t('Store tracks played, relate them to catalog items.'),
+    'fields' => array(
+      'log_track_nid' => array(
+        'description' => t("The track's {node}.nid."),
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'catalog_nid' => array(
+        'description' => t('The album to which the track belongs.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'title' => array(
+        'description' => t("The played track's nid."),
+        'type' => 'varchar',
+        'length' => 96,
+        'not null' => TRUE,
+        'default' => '',
+      ),
+    ),
+    'indexes' => array(
+      'station_log_track_title' => array('title'),
+    ),
+    'primary key' => array('log_track_nid'),
+  );
+  return $schema;
+}
