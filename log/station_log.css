@@ -1,0 +1,42 @@
+.station-log {
+  list-style: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.station-log li {
+  line-height: 1.4em;
+  list-style: none;
+  margin: 0 0 .8em 0;
+  padding-left: 0;
+}
+
+.station-log span {
+  padding: 0 .4em 0 0;
+}
+
+.station-log .artist {
+  font-weight: bold;
+}
+
+.station-log .song {
+  font-style: oblique;
+}
+
+.station-log-buy-button {
+	border: 1px solid #999;
+	color: #999;
+	margin-right: .5em;
+	padding: 0 3px 1px 3px;
+}
+
+.station-log-buy-button:hover {
+	background: #ddd;
+	border: 1px solid #333;
+	color: #000;
+}
+
+.station-log-buy-button:hover {
+	color: #000;
+	text-decoration: none;
+}
