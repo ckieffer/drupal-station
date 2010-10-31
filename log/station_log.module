@@ -3,12 +3,12 @@
 
 /**
  * @todo Recently played block with admin settings (number of items). Include Ajax update of list.
- * @todo Recently played page with admin settings. Include Ajax update of list.
  * @todo Validate song names against MusicBrainz.
  * @todo Create a "song not found" in MusicBrainz report.
  * @todo Handle multiple schedules.
  * @todo Set $node->uid to 0 or 1. Search for uid used by others for cron operations.
  * @todo Look into getting setting genre for station_catalog items, does MusicBrainz provide genre?
+ * @todo Implement views for pages and blocks
  */
 
 /**
@@ -48,6 +48,10 @@ function station_log_access($op, $node, $account) {
  * Implementation of hook_menu().
  */
 function station_log_menu() {
+  // Get the default schedule's title
+  $schedule_nid = variable_get('station_schedule_default', 0);
+  $schedule_title = db_result(db_query("SELECT n.title FROM {station_schedule} s JOIN {node} n ON n.nid = s.nid WHERE s.nid = $schedule_nid"));
+
   $items['admin/settings/station/log'] = array(
           'title' => 'Log',
           'page callback' => 'drupal_get_form',
@@ -63,6 +67,13 @@ function station_log_menu() {
           'access arguments' => array('access station log content'),
           'type' => MENU_CALLBACK,
   );
+  $items['station/log/recent'] = array(
+          'title' => "Recently played on $schedule_title",
+          'description' => 'View songs recently played',
+          'page callback' => 'station_log_recent_page',
+          'access arguments' => array('access station log content'),
+          'type' => MENU_NORMAL_ITEM, //MENU_CALLBACK,
+  );
   return $items;
 }
 
@@ -70,7 +81,7 @@ function station_log_menu() {
  * Implementation hook_cron().
  */
 function station_log_cron() {
-  
+
 }
 
 /**
@@ -89,7 +100,7 @@ function station_log_get_max_timestamp($schedule_nid) {
 }
 
 /**
- * Pull an array of tracks from a SHOUTcast song history object
+ * Pull an array of tracks from a SHOUTcast song history object.
  *
  * @return
  *   An associative track history array
@@ -147,7 +158,7 @@ function station_log_album($track) {
  *
  * @param
  *   A station schedule nid.
- * 
+ *
  * @return
  *   The number tracks logged.
  */
@@ -161,7 +172,7 @@ function station_log_new_tracks($schedule_nid) {
 
   // Count the number of songs logged
   $tracks_logged = 0;
-  
+
   // Loop through and log each new track
   foreach ($tracks as $timestamp => $track) {
     if (empty($max_timestamp) || $timestamp > $max_timestamp) {
@@ -216,11 +227,162 @@ function station_log_track_add($track) {
 }
 
 /**
- * Provide a page to call from cron to update the log without running hook_cron()
+ * Provide a page to call from cron to update the log without running hook_cron().
  */
 function station_log_update_page() {
   // Get the first web stream found to set the default shoutcast history url
   $schedule_nid = variable_get('station_schedule_default', 0);
   $tracks_logged = station_log_new_tracks($schedule_nid);
   return t("Added $tracks_logged tracks to the station log.");
+}
+
+/**
+ * Display songs played during the past N hours.
+ *
+ * @todo Create an admin setting for how many hours to show
+ */
+function station_log_recent_page() {
+  drupal_add_css(drupal_get_path('module', 'station_log') .'/station_log.css');
+  $tracks = station_log_get_recent_tracks(3, 'hour');
+  $fields = array('time', 'artist', 'song', 'album', 'label', 'year');
+  $list = station_log_track_list($tracks, $fields);
+  return $list;
+}
+
+/**
+ * Implementation of hook_block().
+ *
+ * @todo Create a block setting for number or tracks to display
+ * @todo Create a block setting for time format, select from Drupal date formats, recommend format
+ */
+function station_log_block($op = 'list', $delta = 0) {
+  drupal_add_css(drupal_get_path('module', 'station_log') .'/station_log.css');
+
+  // listing of blocks, such as on the admin/block page
+  if ($op == 'list') {
+    $block[0]['info'] = t('Station log recently played');
+    return $block;
+
+  } elseif ($op == 'view') {
+    $block['content'] = '';
+    //$date_format = variable_get('station_log_block_dateformat', 'h:i');
+    $limit = 6; //variable_get('station_log_block_limit', 5);
+    $tracks = station_log_get_recent_tracks($limit);
+    $fields = array('artist', 'song');
+
+    // set up the block
+    $block['subject'] = variable_get('station_log_block_subject', '');
+    $block['content'] = station_log_track_list($tracks, $fields);
+    $block['content'] .= '<a href="http://' . $_SERVER['HTTP_HOST'] .
+          base_path() . 'station/log/recent" class="more">more</a>';
+  }
+  return $block;
+}
+
+/**
+ * Get recent tracks played, either a track count or tracks played in the past N hours.
+ *
+ * @param $limit
+ *   Number of tracks to return, either a track count or an hour count
+ *
+ * @param $unit
+ *   The unit of measure, either 'count' or 'hour'
+ *
+ * @return
+ *    A database result object containing a list of songs
+ *
+ * @todo Add support for multiple schedules
+ */
+function station_log_get_recent_tracks($limit, $unit = 'count') {
+  $args[] = variable_get('station_schedule_default', 0);
+  $clauses = '';
+  if ($unit == 'hour') {
+    $clauses .= 'AND l.timestamp > %d';
+    $args[] = (mktime() - ($limit * 4680)); // 4320
+    $limit = 1000;
+  }
+  $tracks = db_query_range("SELECT l.timestamp, lt.title, c.artist, c.album, c.label, c.year, c.asin
+    FROM {station_log} l
+    JOIN {station_log_track} lt ON lt.log_track_nid = l.log_track_nid
+    JOIN {station_catalog} c ON c.nid = lt.catalog_nid
+    WHERE l.schedule_nid = %d $clauses
+    ORDER BY l.timestamp DESC", $args, 0, $limit);
+
+  return $tracks;
+}
+
+/**
+ * Format a list of tracks as an HTML unordered list.
+ *
+ * @param $tracks
+ *    An object containing a list of tracks to format
+ *
+ * @param $fields
+ *    An array containing which fields to display (time, artist, song, album, label, year)
+ *
+ * @return
+ *    An HTML unordered list
+ *
+ * @todo Adjust time for the user's timezone (see station.nowplaying)
+ * @todo Make themeable, use Drupal theme functions
+ * @todo Don't build the buy link if amazon.module's not enabled
+ */
+function station_log_track_list($tracks, $fields) {
+  $list = '<ul class="station-log">';
+  while ($track = db_fetch_object($tracks)) {
+    $list .= "<li>";
+    $list .= station_log_buy_amazon_link($track);
+    if (in_array('time', $fields) && !empty($track->timestamp)) {
+      $list .= '<span class="datetime">' . date('H:i', $track->timestamp) . '</span>';
+    }
+    if (in_array('artist', $fields) && !empty($track->artist)) {
+      $list .= '<span class="artist">' . $track->artist . '</span>';
+    }
+    if (in_array('song', $fields) && !empty($track->title)) {
+      $list .= '<span class="song">' . $track->title . '</span>';
+    }
+    if (in_array('album', $fields) && !empty($track->album)) {
+      $list .= '<span class="album">' . $track->album . '</span>';
+    }
+    if (in_array('label', $fields) && !empty($track->label)) {
+      $list .= '<span class="label">' . $track->label . '</span>';
+    }
+    if (in_array('year', $fields) && !empty($track->year)) {
+      $list .= '<span class="year">' . $track->year . '</span>';
+    }
+    $list .= "</li>";
+  }
+  $list .= "</ul>";
+  return $list;
+}
+
+/**
+ * Create a "buy" from Amazon link for albums and artists.
+ *
+ * @param $track
+ *    An object containing a track's title, artist, album, etc.
+ *
+ * @return
+ *    A link to either an Amazon detail page or an artist search
+ *
+ * @todo Get affiliate code from amazon.module
+ */
+function station_log_buy_amazon_link($track) {
+  $affiliate_code = 'indiesf-20';
+  if (!empty($affiliate_code)) {
+    if (!empty($track->asin)) {
+      $link = "http://amazon.com/gp/product/$track->asin?ie=UTF8&tag=$affiliate_code&linkCode=as2&camp=1789&creative=9325&creativeASIN=$track->asin";
+      $title = t("Buy $track->album by $track->artist from Amazon.com");
+    }
+    else {
+      $keyword = urlencode($track->artist . ' ' . $track->album);
+      $link = "http://amazon.com/exec/obidos/redirect?tag=$affiliate_link&creative=9325&camp=1789&link_code=ur2&path=external-search%3Fsearch-type%3Dss%26index%3Dmusic%26keyword%3D$keyword";
+      $title = t("Buy music by $track->artist from Amazon.com");
+    }
+    return "<a href=\"$link\" class=\"station-log-buy-button\" target=\"_blank\" title=\"$title\">" . t('buy') . "</a>";
+
+  }
+  else {
+    return null;
+  }
 }
