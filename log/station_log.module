@@ -133,10 +133,10 @@ function station_log_get_shoutcast_tracks() {
  */
 function station_log_album($track) {
   // Do we have the album in the catalog already?
-  $catalog_item = db_result(db_query("SELECT MIN(nid), artist, album, year, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
+  $node = db_fetch_object(db_query("SELECT MIN(nid) AS nid, artist, album, year, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
 
   // If not, insert this as a new album
-  if (!$catalog_item->nid) {
+  if (!$node->nid) {
     if (!empty($track['artist']) && !empty($track['album'])) {
       $node = new stdClass();
       $node->type = 'station_album';
