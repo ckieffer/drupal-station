@@ -133,7 +133,7 @@ function station_log_get_shoutcast_tracks() {
  */
 function station_log_album($track) {
   // Do we have the album in the catalog already?
-  $node = db_result(db_query("SELECT nid, artist, album, year, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
+  $catalog_item = db_result(db_query("SELECT MIN(nid), artist, album, year, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
 
   // If not, insert this as a new album
   if (!$catalog_item->nid) {
@@ -166,8 +166,7 @@ function station_log_new_tracks($schedule_nid) {
   // Get SHOUTcast SONGHISTORY, reverse the order and preserve the keys
   $tracks = array_reverse(station_log_get_shoutcast_tracks(), true);
 
-  // Get the last timestamp logged from station_log
-  // We'll only log tracks since then
+  // Get last timestamp logged from the station log, we'll only log tracks since then
   $max_timestamp = station_log_get_max_timestamp($schedule_nid);
 
   // Count the number of songs logged
