@@ -2,15 +2,14 @@
 // $Id: station_log.module,v 1.24 2010/01/28 00:00:00 thumb Exp $
 
 /**
- * @todo Rename station_log.log_track_nid and station_log_track.log_track_nid to track_nid
- * @todo Recently played block with admin settings (number of items). Include Ajax update of list.
+ * @todo Provide page and block admin settings (number of items). Include Ajax update of list.
  * @todo Consider what to do on multi-artist compilation albums. May need a separate table. Post a question.
  * @todo Validate song names against MusicBrainz.
- * @todo Create a "song not found" in MusicBrainz report.
+ * @todo Create "album/song not found" in MusicBrainz report.
  * @todo Handle multiple schedules.
- * @todo Set $node->uid to 0 or 1. Search for uid used by others for cron operations.
- * @todo Look into getting setting genre for station_catalog items, does MusicBrainz provide genre?
- * @todo Implement views for pages and blocks
+ * @todo Set $node->uid to proper value, either 0 or 1. Search for uid used by others for cron operations.
+ * @todo Look into getting and setting genre for station_catalog items, does MusicBrainz provide genre?
+ * @todo Implement views for pages and blocks.
  */
 
 /**
@@ -116,13 +115,13 @@ function station_log_get_max_timestamp($schedule_nid) {
  */
 function station_log_get_shoutcast_tracks() {
   $xml = shoutcast_get_xml();
-  $songhistory = $xml->SONGHISTORY;
-  foreach($songhistory->SONG as $key => $track) {
+  $history = $xml->SONGHISTORY;
+  foreach($history->SONG as $key => $track) {
     $parts = explode(' - ', $track->TITLE);
-    // @todo Admin setting to define track info order, default order: artist, song, album, label
+    // @todo Admin setting to define track info order, default order: artist, title, album, label
     $tracks[(int) $track->PLAYEDAT] = array(
         'artist' => trim($parts[0]),
-        'song' => trim($parts[1]),
+        'title' => trim($parts[1]),
         'album' => trim($parts[2]),
         'label' => trim($parts[3]),
         'raw' => (string) $track->TITLE,
@@ -135,7 +134,7 @@ function station_log_get_shoutcast_tracks() {
  * Get album id from station catalog, if the album doesn't exist, add it.
  *
  * @param $track
- *   Track info, including artist, album, song, and label.
+ *   Track info, including artist, album, title, and label.
  *
  * @return
  *   A station_catalog album's nid.
@@ -163,7 +162,7 @@ function station_log_album($track) {
 }
 
 /**
- * Get song's played from the stream and log them.
+ * Get songs played from the stream and log them.
  *
  * @param
  *   A station schedule nid.
@@ -210,13 +209,13 @@ function station_log_new_tracks($schedule_nid) {
  *    An array containing track info.
  */
 function station_log_add($schedule_nid, $timestamp, $track) {
-  $log_track_nid = db_result(db_query("SELECT log_track_nid FROM {station_log_track} WHERE catalog_nid = %d AND title = '%s'", $track['catalog_nid'], $track['song']));
+  $track_nid = db_result(db_query("SELECT track_nid FROM {station_log_track} WHERE catalog_nid = %d AND title = '%s'", $track['catalog_nid'], $track['title']));
 
-  if (!$log_track_nid) {
-    $log_track_nid = station_log_track_add($track);
+  if (!$track_nid) {
+    $track_nid = station_log_track_add($track);
   }
-  if ($log_track_nid > 0) {
-    db_query("INSERT INTO {station_log} (schedule_nid, timestamp, log_track_nid) VALUES (%d, %d, %d)", $schedule_nid, $timestamp, $log_track_nid);
+  if ($track_nid > 0) {
+    db_query("INSERT INTO {station_log} (schedule_nid, timestamp, track_nid) VALUES (%d, %d, %d)", $schedule_nid, $timestamp, $track_nid);
   }
 }
 
@@ -227,11 +226,11 @@ function station_log_add($schedule_nid, $timestamp, $track) {
  *   An array containing an individual track's catalog_nid and song title.
  *
  * @return
- *   The logged track's log_track_nid.
+ *   The logged track's track_nid.
  */
 function station_log_track_add($track) {
-  db_query("INSERT INTO {station_log_track} (catalog_nid, title) VALUES (%d, '%s')", $track['catalog_nid'], $track['song']);
-  return db_last_insert_id('drpl_station_log_track', 'log_track_nid');
+  db_query("INSERT INTO {station_log_track} (catalog_nid, title) VALUES (%d, '%s')", $track['catalog_nid'], $track['title']);
+  return db_last_insert_id('drpl_station_log_track', 'track_nid');
 }
 
 /**
@@ -245,14 +244,14 @@ function station_log_update_page() {
 }
 
 /**
- * Display songs played during the past N hours.
+ * Display titles played during the past N hours.
  *
  * @todo Create an admin setting for how many hours to show
  */
 function station_log_recent_page() {
   drupal_add_css(drupal_get_path('module', 'station_log') .'/station_log.css');
   $tracks = station_log_get_recent_tracks(3, 'hour');
-  $fields = array('time', 'artist', 'song', 'album', 'label', 'year');
+  $fields = array('time', 'artist', 'title', 'album', 'label', 'year');
   $list = station_log_track_list($tracks, $fields);
   return $list;
 }
@@ -276,7 +275,7 @@ function station_log_block($op = 'list', $delta = 0) {
     //$date_format = variable_get('station_log_block_dateformat', 'h:i');
     $limit = 6; //variable_get('station_log_block_limit', 5);
     $tracks = station_log_get_recent_tracks($limit);
-    $fields = array('artist', 'song');
+    $fields = array('artist', 'title');
 
     // set up the block
     $block['subject'] = variable_get('station_log_block_subject', '');
@@ -311,7 +310,7 @@ function station_log_get_recent_tracks($limit, $unit = 'count') {
   }
   $tracks = db_query_range("SELECT l.timestamp, lt.title, c.artist, c.album, c.label, c.year, c.asin
     FROM {station_log} l
-    JOIN {station_log_track} lt ON lt.log_track_nid = l.log_track_nid
+    JOIN {station_log_track} lt ON lt.track_nid = l.track_nid
     JOIN {station_catalog} c ON c.nid = lt.catalog_nid
     WHERE l.schedule_nid = %d $clauses
     ORDER BY l.timestamp DESC", $args, 0, $limit);
@@ -326,7 +325,7 @@ function station_log_get_recent_tracks($limit, $unit = 'count') {
  *    An object containing a list of tracks to format
  *
  * @param $fields
- *    An array containing which fields to display (time, artist, song, album, label, year)
+ *    An array containing which fields to display (time, artist, title, album, label, year)
  *
  * @return
  *    An HTML unordered list
@@ -346,8 +345,8 @@ function station_log_track_list($tracks, $fields) {
     if (in_array('artist', $fields) && !empty($track->artist)) {
       $list .= '<span class="artist">' . $track->artist . '</span>';
     }
-    if (in_array('song', $fields) && !empty($track->title)) {
-      $list .= '<span class="song">' . $track->title . '</span>';
+    if (in_array('title', $fields) && !empty($track->title)) {
+      $list .= '<span class="title">' . $track->title . '</span>';
     }
     if (in_array('album', $fields) && !empty($track->album)) {
       $list .= '<span class="album">' . $track->album . '</span>';
@@ -397,7 +396,7 @@ function station_log_buy_amazon_link($track) {
 
 /**
  * Remove duplicate station_catalog album nodes and duplicate station_log_tracks. In each case,
- * update station_log_track and station_log respectively to maintain album links and track links. 
+ * update station_log_track and station_log respectively to maintain album links and track links.
  */
 function station_log_fix_duplicate_albums_page() {
   $page = '';
@@ -418,7 +417,7 @@ function station_log_fix_duplicate_albums_page() {
     // Select each duplicate album
     $album_instances = db_query("SELECT nid FROM {station_catalog}
       WHERE artist = '%s' AND album = '%s' ORDER BY nid", $album->artist, $album->album);
-    
+
     // Update logged track's album ids, set them to the first instance of the duplicated album
     $album_nids = array();
     $first_album_nid = null;
@@ -443,8 +442,8 @@ function station_log_fix_duplicate_albums_page() {
   }
   $page .= "<h2>$album_count Duplicate Albums</h2><ul>$album_list</ul>";
 
-  // 
-  $duplicate_tracks = db_query("SELECT t.log_track_nid, t.catalog_nid, c.artist, t.title, c.album, COUNT(t.title) AS track_count
+  //
+  $duplicate_tracks = db_query("SELECT t.track_nid, t.catalog_nid, c.artist, t.title, c.album, COUNT(t.title) AS track_count
     FROM {station_log_track} t JOIN {station_catalog} c ON c.nid = t.catalog_nid
     GROUP BY c.artist, t.title
     HAVING track_count > 1
@@ -457,12 +456,12 @@ function station_log_fix_duplicate_albums_page() {
     $track_list .= "<li>$track->title by $track->artist appears $track->track_count times.";
 
     // Select each duplicate track
-    $track_instances = db_query("SELECT l.log_track_nid
+    $track_instances = db_query("SELECT l.track_nid
       FROM {station_log} l
-        JOIN drpl_station_log_track t ON t.log_track_nid = l.log_track_nid
+        JOIN drpl_station_log_track t ON t.track_nid = l.track_nid
         JOIN drpl_station_catalog c ON c.nid = t.catalog_nid
       WHERE t.title = '%s' AND t.catalog_nid = %d
-      ORDER BY log_track_nid", $track->title, $track->catalog_nid);
+      ORDER BY track_nid", $track->title, $track->catalog_nid);
 
     // Update logged track's ids, set them to the first instance of the duplicated track
     $track_nids = array();
@@ -471,16 +470,16 @@ function station_log_fix_duplicate_albums_page() {
     while ($duplicate_track = db_fetch_object($track_instances)) {
       // Keep the first track
       if (is_null($first_track_nid)) {
-        $first_track_nid = $duplicate_track->log_track_nid;
+        $first_track_nid = $duplicate_track->track_nid;
       }
       else {
         // Set duplicate logged tracks nid's to the first instance of the duped track
-        db_query("UPDATE {station_log} SET log_track_nid = %d WHERE log_track_nid = %d", $first_track_nid, $duplicate_track->log_track_nid);
+        db_query("UPDATE {station_log} SET track_nid = %d WHERE track_nid = %d", $first_track_nid, $duplicate_track->track_nid);
         // Delete duplicate the tracks
-        db_query("DELETE FROM {station_log_track} WHERE log_track_nid = %d", $duplicate_track->log_track_nid);
+        db_query("DELETE FROM {station_log_track} WHERE track_nid = %d", $duplicate_track->track_nid);
       }
       // Collect the track nids for display, the first nid is kept while others are deleted
-      $track_nids[] = $duplicate_track->log_track_nid;
+      $track_nids[] = $duplicate_track->track_nid;
     }
     $track_nids = '(' . implode(', ', $track_nids) . ')<br>';
     $track_list .= " $track_nids</li>";
