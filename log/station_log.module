@@ -3,13 +3,14 @@
 
 /**
  * @todo Provide page and block admin settings (number of items). Include Ajax update of list.
+ * @todo Create "album/song not found" in MusicBrainz report.
  * @todo Consider what to do on multi-artist compilation albums. May need a separate table. Post a question.
  * @todo Validate song names against MusicBrainz.
- * @todo Create "album/song not found" in MusicBrainz report.
  * @todo Handle multiple schedules.
  * @todo Set $node->uid to proper value, either 0 or 1. Search for uid used by others for cron operations.
  * @todo Look into getting and setting genre for station_catalog items, does MusicBrainz provide genre?
  * @todo Implement views for pages and blocks.
+ * @todo Add LinkShare affiliate links for iTunes (http://drupal.org/node/519558)
  */
 
 /**
@@ -371,12 +372,10 @@ function station_log_track_list($tracks, $fields) {
  *
  * @return
  *    A link to either an Amazon detail page or an artist search
- *
- * @todo Get affiliate code from amazon.module
  */
 function station_log_buy_amazon_link($track) {
-  $affiliate_code = 'indiesf-20';
-  if (!empty($affiliate_code)) {
+  $affiliate_code = variable_get('amazon_custom_associate_id', 0);
+  if ($affiliate_code) {
     if (!empty($track->asin)) {
       $link = "http://amazon.com/gp/product/$track->asin?ie=UTF8&tag=$affiliate_code&linkCode=as2&camp=1789&creative=9325&creativeASIN=$track->asin";
       $title = t("Buy $track->album by $track->artist from Amazon.com");
