@@ -38,7 +38,7 @@ function station_log_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
-      'log_track_nid' => array(
+      'track_nid' => array(
         'description' => t("The played track's nid."),
         'type' => 'int',
         'unsigned' => TRUE,
@@ -52,7 +52,7 @@ function station_log_schema() {
   $schema['station_log_track'] = array(
     'description' => t('Store tracks played, relate them to catalog items.'),
     'fields' => array(
-      'log_track_nid' => array(
+      'track_nid' => array(
         'description' => t("The track's {node}.nid."),
         'type' => 'serial',
         'unsigned' => TRUE,
@@ -76,7 +76,7 @@ function station_log_schema() {
     'indexes' => array(
       'station_log_track_title' => array('title'),
     ),
-    'primary key' => array('log_track_nid'),
+    'primary key' => array('track_nid'),
   );
   return $schema;
 }
