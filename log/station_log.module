@@ -2,15 +2,19 @@
 // $Id: station_log.module,v 1.24 2010/01/28 00:00:00 thumb Exp $
 
 /**
- * @todo Provide page and block admin settings (number of items). Include Ajax update of list.
+ *
+ *
+ * @todo Update recently played block list via Ajax.
+ * @todo Move SHOUTcast XML retrieval to this module, don't use shoutcast.module
  * @todo Create "album/song not found" in MusicBrainz report.
- * @todo Consider what to do on multi-artist compilation albums. May need a separate table. Post a question.
- * @todo Validate song names against MusicBrainz.
+ * @todo Adjust time for the user's timezone (see station.nowplaying)
+ * @todo Consider what to do on multi-artist albums (compilations). May need a separate table. Post a question.
+ * @todo Add LinkShare affiliate links for iTunes.
  * @todo Handle multiple schedules.
- * @todo Set $node->uid to proper value, either 0 or 1. Search for uid used by others for cron operations.
+ * @todo Validate song names against MusicBrainz.
  * @todo Look into getting and setting genre for station_catalog items, does MusicBrainz provide genre?
+ * @todo Make themeable, use Drupal theme functions
  * @todo Implement views for pages and blocks.
- * @todo Add LinkShare affiliate links for iTunes (http://drupal.org/node/519558)
  */
 
 /**
@@ -50,10 +54,6 @@ function station_log_access($op, $node, $account) {
  * Implementation of hook_menu().
  */
 function station_log_menu() {
-  // Get the default schedule's title
-  $schedule_nid = variable_get('station_schedule_default', 0);
-  $schedule_title = db_result(db_query("SELECT n.title FROM {station_schedule} s JOIN {node} n ON n.nid = s.nid WHERE s.nid = $schedule_nid"));
-
   $items['admin/settings/station/log'] = array(
           'title' => 'Log',
           'page callback' => 'drupal_get_form',
@@ -70,17 +70,18 @@ function station_log_menu() {
           'type' => MENU_CALLBACK,
   );
   $items['station/log/recent'] = array(
-          'title' => "Recently played on $schedule_title",
+          'title' => variable_get('station_log_page_subject', t('Recently played')),
           'description' => 'View songs recently played',
           'page callback' => 'station_log_recent_page',
           'access arguments' => array('access station log content'),
-          'type' => MENU_NORMAL_ITEM, //MENU_CALLBACK,
+          'type' => MENU_NORMAL_ITEM,
   );
+  // @todo limit access to admins
   $items['station/log/duplicates'] = array(
           'title' => 'Duplicate Albums and Tracks',
           'description' => '',
-          'page callback' => 'station_log_fix_duplicate_albums_page',
-          'access arguments' => array('access station log content'), // administer station log
+          'page callback' => 'station_log_fix_duplicates_page',
+          'access arguments' => array('access station log content'),
           'type' => MENU_CALLBACK
   );
   return $items;
@@ -119,7 +120,6 @@ function station_log_get_shoutcast_tracks() {
   $history = $xml->SONGHISTORY;
   foreach($history->SONG as $key => $track) {
     $parts = explode(' - ', $track->TITLE);
-    // @todo Admin setting to define track info order, default order: artist, title, album, label
     $tracks[(int) $track->PLAYEDAT] = array(
         'artist' => trim($parts[0]),
         'title' => trim($parts[1]),
@@ -142,7 +142,7 @@ function station_log_get_shoutcast_tracks() {
  */
 function station_log_album($track) {
   // Do we have the album in the catalog already?
-  $node = db_fetch_object(db_query("SELECT MIN(nid) AS nid, artist, album, year, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
+  $node = db_fetch_object(db_query("SELECT MIN(nid) AS nid, artist, album, label FROM {station_catalog} WHERE artist = '%s' AND album = '%s'", $track['artist'], $track['album']));
 
   // If not, insert this as a new album
   if (!$node->nid) {
@@ -246,41 +246,35 @@ function station_log_update_page() {
 
 /**
  * Display titles played during the past N hours.
- *
- * @todo Create an admin setting for how many hours to show
  */
 function station_log_recent_page() {
   drupal_add_css(drupal_get_path('module', 'station_log') .'/station_log.css');
-  $tracks = station_log_get_recent_tracks(3, 'hour');
-  $fields = array('time', 'artist', 'title', 'album', 'label', 'year');
-  $list = station_log_track_list($tracks, $fields);
+  $limit = variable_get('station_log_page_limit', 6);
+  $tracks = station_log_get_recent_tracks($limit, 'hours');
+  $fields = station_log_display_fields('page');
+  $list = station_log_track_list($tracks, $fields, 'page');
   return $list;
 }
 
 /**
  * Implementation of hook_block().
- *
- * @todo Create a block setting for number or tracks to display
- * @todo Create a block setting for time format, select from Drupal date formats, recommend format
  */
 function station_log_block($op = 'list', $delta = 0) {
   drupal_add_css(drupal_get_path('module', 'station_log') .'/station_log.css');
 
-  // listing of blocks, such as on the admin/block page
   if ($op == 'list') {
     $block[0]['info'] = t('Station log recently played');
     return $block;
 
   } elseif ($op == 'view') {
     $block['content'] = '';
-    //$date_format = variable_get('station_log_block_dateformat', 'h:i');
-    $limit = 6; //variable_get('station_log_block_limit', 5);
-    $tracks = station_log_get_recent_tracks($limit);
+    $limit = variable_get('station_log_block_limit', 5);
+    $tracks = station_log_get_recent_tracks($limit, null);
     $fields = array('artist', 'title');
+    $fields = station_log_display_fields('block');
 
-    // set up the block
-    $block['subject'] = variable_get('station_log_block_subject', '');
-    $block['content'] = station_log_track_list($tracks, $fields);
+    $block['subject'] = variable_get('station_log_block_subject', t('Recently played'));
+    $block['content'] = station_log_track_list($tracks, $fields, 'block');
     $block['content'] .= '<a href="http://' . $_SERVER['HTTP_HOST'] .
           base_path() . 'station/log/recent" class="more">more</a>';
   }
@@ -294,28 +288,25 @@ function station_log_block($op = 'list', $delta = 0) {
  *   Number of tracks to return, either a track count or an hour count
  *
  * @param $unit
- *   The unit of measure, either 'count' or 'hour'
+ *   The unit of measure, 'hours' or null to set count
  *
  * @return
  *    A database result object containing a list of songs
- *
- * @todo Add support for multiple schedules
  */
-function station_log_get_recent_tracks($limit, $unit = 'count') {
+function station_log_get_recent_tracks($limit, $unit) {
   $args[] = variable_get('station_schedule_default', 0);
-  $clauses = '';
-  if ($unit == 'hour') {
-    $clauses .= 'AND l.timestamp > %d';
-    $args[] = (mktime() - ($limit * 4680)); // 4320
-    $limit = 1000;
+  $query = "SELECT l.timestamp, lt.title, c.artist, c.album, c.label, c.asin
+      FROM {station_log} l
+      JOIN {station_log_track} lt ON lt.track_nid = l.track_nid
+      JOIN {station_catalog} c ON c.nid = lt.catalog_nid
+      WHERE l.schedule_nid = %d";
+  $order_by = "ORDER BY l.timestamp DESC";
+  if ($unit == 'hours') {
+    $args[] = (mktime() - ($limit * 3600));
+    $tracks = db_query("$query AND l.timestamp > %d $order_by", $args);
+  } else {
+    $tracks = db_query_range("$query $order_by", $args, 0, $limit);
   }
-  $tracks = db_query_range("SELECT l.timestamp, lt.title, c.artist, c.album, c.label, c.year, c.asin
-    FROM {station_log} l
-    JOIN {station_log_track} lt ON lt.track_nid = l.track_nid
-    JOIN {station_catalog} c ON c.nid = lt.catalog_nid
-    WHERE l.schedule_nid = %d $clauses
-    ORDER BY l.timestamp DESC", $args, 0, $limit);
-
   return $tracks;
 }
 
@@ -326,41 +317,34 @@ function station_log_get_recent_tracks($limit, $unit = 'count') {
  *    An object containing a list of tracks to format
  *
  * @param $fields
- *    An array containing which fields to display (time, artist, title, album, label, year)
+ *    An array containing which fields to display (time, artist, title, album, label)
  *
  * @return
  *    An HTML unordered list
- *
- * @todo Adjust time for the user's timezone (see station.nowplaying)
- * @todo Make themeable, use Drupal theme functions
- * @todo Don't build the buy link if amazon.module's not enabled
  */
-function station_log_track_list($tracks, $fields) {
+function station_log_track_list($tracks, $fields, $context) {
   $list = '<ul class="station-log">';
   while ($track = db_fetch_object($tracks)) {
-    $list .= "<li>";
-    $list .= station_log_buy_amazon_link($track);
-    if (in_array('time', $fields) && !empty($track->timestamp)) {
-      $list .= '<span class="datetime">' . date('H:i', $track->timestamp) . '</span>';
+    $item = array();
+    if ($fields['datetime'] && !empty($track->timestamp)) {
+      $date_format = variable_get("station_log_{$context}_dateformat", 'h:i');
+      $item[] = '<span class="datetime">' . date($date_format, $track->timestamp) . '</span>';
     }
-    if (in_array('artist', $fields) && !empty($track->artist)) {
-      $list .= '<span class="artist">' . $track->artist . '</span>';
+    $item[] = '<span class="artist">' . $track->artist . '</span>';
+    $item[] = '<span class="title">' . $track->title . '</span>';
+    if ($fields['album'] && !empty($track->album)) {
+      $item[] = '<span class="album">' . $track->album . '</span>';
     }
-    if (in_array('title', $fields) && !empty($track->title)) {
-      $list .= '<span class="title">' . $track->title . '</span>';
+    if ($fields['label'] && !empty($track->label)) {
+      $item[] = '<span class="label">' . $track->label . '</span>';
     }
-    if (in_array('album', $fields) && !empty($track->album)) {
-      $list .= '<span class="album">' . $track->album . '</span>';
+    if ($buy_link = station_log_buy_amazon_link($track)) {
+      $list .= '<li>' . $buy_link . implode(' - ', $item) . '</li>';
+    } else {
+      $list .= '<li>' . implode(' - ', $item) . '</li>';
     }
-    if (in_array('label', $fields) && !empty($track->label)) {
-      $list .= '<span class="label">' . $track->label . '</span>';
-    }
-    if (in_array('year', $fields) && !empty($track->year)) {
-      $list .= '<span class="year">' . $track->year . '</span>';
-    }
-    $list .= "</li>";
   }
-  $list .= "</ul>";
+  $list .= '</ul>';
   return $list;
 }
 
@@ -389,7 +373,7 @@ function station_log_buy_amazon_link($track) {
 
   }
   else {
-    return null;
+    return false;
   }
 }
 
@@ -397,7 +381,7 @@ function station_log_buy_amazon_link($track) {
  * Remove duplicate station_catalog album nodes and duplicate station_log_tracks. In each case,
  * update station_log_track and station_log respectively to maintain album links and track links.
  */
-function station_log_fix_duplicate_albums_page() {
+function station_log_fix_duplicates_page() {
   $page = '';
   // Select duplicate album entries for individual artists
   // This ignores shared album names among multiple artists (soundtracks, compilations, etc.)
@@ -487,4 +471,23 @@ function station_log_fix_duplicate_albums_page() {
   $page .= "<h2>$track_count Duplicate Tracks</h2><ul>$track_list</ul>";
 
   return $page;
+}
+
+/**
+ * Get/set which fields to display on the page or block
+ *
+ * @param $context
+ *   Either 'block' or 'page'
+ *
+ * @return
+ *    An array of display field settings
+ */
+function station_log_display_fields($context) {
+  $fields = variable_get("station_log_{$context}_display_fields", array(
+      'datetime',
+      'album',
+      'label',
+    )
+  );
+  return $fields;
 }
