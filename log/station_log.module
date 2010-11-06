@@ -1,21 +1,20 @@
 <?php
 // $Id: station_log.module,v 1.24 2010/01/28 00:00:00 thumb Exp $
 
-/**
- *
- *
- * @todo Update recently played block list via Ajax.
- * @todo Move SHOUTcast XML retrieval to this module, don't use shoutcast.module
- * @todo Create "album/song not found" in MusicBrainz report.
- * @todo Adjust time for the user's timezone (see station.nowplaying)
- * @todo Consider what to do on multi-artist albums (compilations). May need a separate table. Post a question.
- * @todo Add LinkShare affiliate links for iTunes.
- * @todo Handle multiple schedules.
- * @todo Validate song names against MusicBrainz.
- * @todo Look into getting and setting genre for station_catalog items, does MusicBrainz provide genre?
- * @todo Make themeable, use Drupal theme functions
- * @todo Implement views for pages and blocks.
- */
+/*
+ 1) Update recently played block list via Ajax.
+ 2) Get shoutcast current track to show in block if it hasn't been logged yet.
+ 3) Handle multiple schedules. Need to link station schedules to SHOUTcast admin urls.
+ 4) Integrate with amazon.module to retrive album cover image URLs.
+ 5) Add weekly charts, new and popular this week blocks (separate module?)
+ 6) Create "album/song not found" in MusicBrainz report.
+ 7) Adjust time for the user's timezone (see station_nowplaying)
+ 8) What to do on multi-artist albums (compilations)?
+ 9) Add LinkShare search affiliate links for iTunes.
+10) Validate song names against MusicBrainz.
+11) Look into getting and setting genre for station_catalog items, does MusicBrainz provide genre?
+12) Add views support.
+*/
 
 /**
  * Implementation of hook_help().
@@ -77,13 +76,13 @@ function station_log_menu() {
           'type' => MENU_NORMAL_ITEM,
   );
   // @todo limit access to admins
-  $items['station/log/duplicates'] = array(
-          'title' => 'Duplicate Albums and Tracks',
-          'description' => '',
-          'page callback' => 'station_log_fix_duplicates_page',
-          'access arguments' => array('access station log content'),
-          'type' => MENU_CALLBACK
-  );
+//  $items['station/log/duplicates'] = array(
+//          'title' => 'Duplicate Albums and Tracks',
+//          'description' => '',
+//          'page callback' => 'station_log_fix_duplicates_page',
+//          'access arguments' => array('access station log content'),
+//          'type' => MENU_CALLBACK
+//  );
   return $items;
 }
 
