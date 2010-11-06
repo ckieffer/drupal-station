@@ -203,8 +203,10 @@ function station_log_new_tracks($schedule_nid) {
  *
  * @param
  *   A station schedule nid.
+ *
  * @param $timestamp
  *    The date and time the track was played as a Unix timestamp.
+ *
  * @param $track
  *    An array containing track info.
  */
