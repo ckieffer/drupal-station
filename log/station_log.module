@@ -83,9 +83,9 @@ function station_log_menu() {
   );
   $items['station/log/reports'] = array(
           'title' => t('Station Log Reports'),
-          'description' => t('View duplicate albums, tracks, and albums not found in MusicBrainz.org.'),
-          'page callback' => 'station_log_fix_duplicates_page',
-          'access arguments' => array('merge station log reports'),
+          'description' => t('View station log reports, edit incomplete album info, merge duplicate albums and tracks.'),
+          'page callback' => 'station_log_reports_page',
+          'access arguments' => array('view station log reports'),
           'type' => MENU_CALLBACK
   );
   return $items;
@@ -355,6 +355,25 @@ function station_log_track_list($tracks, $fields, $context) {
 }
 
 /**
+ * Get/set which fields to display on the page or block
+ *
+ * @param $context
+ *   Either 'block' or 'page'
+ *
+ * @return
+ *    An array of display field settings
+ */
+function station_log_display_fields($context) {
+  $fields = variable_get("station_log_{$context}_display_fields", array(
+      'datetime',
+      'album',
+      'label',
+    )
+  );
+  return $fields;
+}
+
+/**
  * Create a "buy" from Amazon link for albums and artists.
  *
  * @param $track
@@ -384,11 +403,76 @@ function station_log_buy_amazon_link($track) {
 }
 
 /**
- * Remove duplicate station_catalog album nodes and duplicate station_log_tracks. In each case,
- * update station_log_track and station_log respectively to maintain album links and track links.
+ * Display general station log statistics and links to duplicate album/track and missing ASIN reports.
  */
-function station_log_fix_duplicates_page() {
+function station_log_reports_page() {
   $page = '';
+
+  // Display general statistics
+  $stat_tracks = db_result(db_query("SELECT COUNT(*) AS tracks FROM {station_log}"));
+  $stat_start_date = db_result(db_query("SELECT MIN(timestamp) AS start_date FROM {station_log}"));
+  $stat_unique_tracks = db_result(db_query("SELECT COUNT(*) AS unique_tracks FROM {station_log_track}"));
+  $stat_albums = db_result(db_query("SELECT COUNT(*) AS albums FROM {station_catalog}"));
+
+  $page .= '<p>' . t("%tracks have been played since %start_date. That's %unique_tracks from %albums.",  array(
+              '%tracks' => format_plural($stat_tracks, '1 track', '@count tracks'),
+              '%start_date' => format_date($stat_start_date, 'long', 0),
+              '%unique_tracks' => format_plural($stat_unique_tracks, '1 unique track', '@count unique tracks'),
+              '%albums' => format_plural($stat_albums, '1 unique album', '@count albums'),
+          )) . '</p>';
+
+  // Get albums from the catalog without Amazon.com ASIN values
+  $missing_asin = db_result(db_query("SELECT COUNT(album) AS missing_asin FROM {station_catalog}
+      WHERE asin = ''  OR asin IS NULL"));
+
+  if ($missing_asin > 0) {
+    $album_asin  = t("%missing_asin do not have ASIN values.", array(
+        '%missing_asin' => format_plural($missing_asin, '1 album', '@count albums')));
+    $album_asin .= " <a href=\"#\">" . t('Fix them!') . "</a>";
+  } else {
+    $album_asin = t('All albums have an ASIN!');
+  }
+
+  // Get duplicate album count
+  $duplicate_albums = db_result(db_query("SELECT COUNT(album) AS duplicate_albums, artist, album
+    FROM {station_catalog}
+    GROUP BY artist, album
+    HAVING duplicate_albums > 1"));
+
+  if ($duplicate_albums > 0) {
+    $album_dupes  = t("%duplicate_albums with duplicates found.", array(
+        '%duplicate_albums' => format_plural($duplicate_albums, '1 album', '@count albums')));
+    $album_dupes .= " <a href=\"#\">" . t('Fix them!') . "</a>";
+  } else {
+    $album_dupes = t('No duplicate albums found!');
+  }
+
+  // Get duplicate track count
+  $duplicate_tracks = db_result(db_query("SELECT COUNT(t.title) AS duplicate_tracks, c.artist, t.title, c.album
+    FROM {station_log_track} t JOIN {station_catalog} c ON c.nid = t.catalog_nid
+    GROUP BY c.artist, t.title
+    HAVING duplicate_tracks > 1"));
+
+  if ($duplicate_tracks > 0) {
+    $track_dupes  = t("%duplicate_tracks with duplicates found.", array(
+        '%duplicate_tracks' => format_plural($duplicate_tracks, '1 track', '@count tracks')));
+    $track_dupes .= " <a href=\"#\">" . t('Fix them!') . "</a>";
+  } else {
+    $track_dupes = t('No duplicate tracks found!');
+  }
+
+  $page .= "<ul><li>$album_dupes</li><li>$track_dupes</li><li>$album_asin</li></ul>";
+
+  return $page;
+}
+
+/**
+ * Display a list of albums that appear in the station catalog more than once.
+ */
+function station_log_reports_duped_albums_page() {
+  $album_count = 0;
+  $album_list = '';
+
   // Select duplicate album entries for individual artists
   // This ignores shared album names among multiple artists (soundtracks, compilations, etc.)
   $duplicate_albums = db_query("SELECT nid, artist, album, COUNT(album) AS album_count
@@ -396,9 +480,6 @@ function station_log_fix_duplicates_page() {
     GROUP BY artist, album
     HAVING album_count > 1
     ORDER BY album, nid DESC");
-
-  $album_count = 0;
-  $album_list = '';
 
   while ($album = db_fetch_object($duplicate_albums)) {
     $album_list .= "<li>$album->album by $album->artist appears $album->album_count times.";
@@ -429,17 +510,25 @@ function station_log_fix_duplicates_page() {
     $album_list .= " $album_nids</li>";
     $album_count++;
   }
-  $page .= "<h2>$album_count Duplicate Albums</h2><ul>$album_list</ul>";
+  if (count($album_nids) == 0) {
+    $album_list = '<li>' . t('No duplicates found!') . '</li>';
+  }
 
-  //
+  return "<ul>$album_list</ul>";
+}
+
+/**
+ * Display a list of tracks from albums that appear more than once.
+ */
+function station_log_reports_duped_tracks_page() {
+  $track_count = 0;
+  $track_list = '';
+
   $duplicate_tracks = db_query("SELECT t.track_nid, t.catalog_nid, c.artist, t.title, c.album, COUNT(t.title) AS track_count
     FROM {station_log_track} t JOIN {station_catalog} c ON c.nid = t.catalog_nid
     GROUP BY c.artist, t.title
     HAVING track_count > 1
     ORDER BY c.artist, t.title DESC");
-
-  $track_count = 0;
-  $track_list = '';
 
   while ($track = db_fetch_object($duplicate_tracks)) {
     $track_list .= "<li>$track->title by $track->artist appears $track->track_count times.";
@@ -474,26 +563,16 @@ function station_log_fix_duplicates_page() {
     $track_list .= " $track_nids</li>";
     $track_count++;
   }
-  $page .= "<h2>$track_count Duplicate Tracks</h2><ul>$track_list</ul>";
+  if (count($track_nids) == 0) {
+    $album_list = '<li>' . t('No duplicates tracks found!') . '</li>';
+  }
 
-  return $page;
+  return "<ul>$track_list</ul>";
 }
 
 /**
- * Get/set which fields to display on the page or block
- *
- * @param $context
- *   Either 'block' or 'page'
- *
- * @return
- *    An array of display field settings
+ * Display a list of station_catalog albums without ASIN values.
  */
-function station_log_display_fields($context) {
-  $fields = variable_get("station_log_{$context}_display_fields", array(
-      'datetime',
-      'album',
-      'label',
-    )
-  );
-  return $fields;
+function station_log_reports_albums_asin_page() {
+
 }
