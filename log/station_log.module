@@ -32,7 +32,9 @@ function station_log_help($path, $arg) {
 function station_log_perm() {
   return array(
     'administer station log',
-    'access station log content'
+    'view station log reports',
+    'view station log content',
+    'update station log',
   );
 }
 
@@ -43,9 +45,13 @@ function station_log_access($op, $node, $account) {
   if (user_access('administer station log', $account)) {
     return TRUE;
   }
-  switch ($op) {
-    case 'view':
-      return user_access('view station log content', $account);
+  if ($op == 'view') {
+    if (user_access('view station log reports')) {
+      return TRUE;
+    }
+    if (user_access('view station log content')) {
+      return TRUE;
+    }
   }
 }
 
@@ -62,27 +68,26 @@ function station_log_menu() {
           'type' => MENU_LOCAL_TASK
   );
   $items['station/log/update'] = array(
-          'title' => 'Update the station log',
-          'description' => 'Update the station log',
+          'title' => t('Update the station log'),
+          'description' => t('Update the station log'),
           'page callback' => 'station_log_update_page',
-          'access arguments' => array('access station log content'),
+          'access arguments' => array('view station log content'),
           'type' => MENU_CALLBACK,
   );
   $items['station/log/recent'] = array(
           'title' => variable_get('station_log_page_subject', t('Recently played')),
-          'description' => 'View songs recently played',
+          'description' => t('View songs recently played'),
           'page callback' => 'station_log_recent_page',
-          'access arguments' => array('access station log content'),
+          'access arguments' => array('view station log content'),
           'type' => MENU_NORMAL_ITEM,
   );
-  // @todo limit access to admins
-//  $items['station/log/duplicates'] = array(
-//          'title' => 'Duplicate Albums and Tracks',
-//          'description' => '',
-//          'page callback' => 'station_log_fix_duplicates_page',
-//          'access arguments' => array('access station log content'),
-//          'type' => MENU_CALLBACK
-//  );
+  $items['station/log/reports'] = array(
+          'title' => t('Station Log Reports'),
+          'description' => t('View duplicate albums, tracks, and albums not found in MusicBrainz.org.'),
+          'page callback' => 'station_log_fix_duplicates_page',
+          'access arguments' => array('merge station log reports'),
+          'type' => MENU_CALLBACK
+  );
   return $items;
 }
 
@@ -413,7 +418,7 @@ function station_log_fix_duplicates_page() {
       }
       else {
         // Set logged track's album nid to the first instance of the duped album
-        db_query("UPDATE {station_log_track} SET catalog_nid = %d WHERE catalog_nid = %d", $first_album_nid, $duplicate_album->nid);
+        //db_query("UPDATE {station_log_track} SET catalog_nid = %d WHERE catalog_nid = %d", $first_album_nid, $duplicate_album->nid);
         // Delete duplicate albums
         node_delete($duplicate_album->nid);
       }
@@ -458,9 +463,9 @@ function station_log_fix_duplicates_page() {
       }
       else {
         // Set duplicate logged tracks nid's to the first instance of the duped track
-        db_query("UPDATE {station_log} SET track_nid = %d WHERE track_nid = %d", $first_track_nid, $duplicate_track->track_nid);
+        //db_query("UPDATE {station_log} SET track_nid = %d WHERE track_nid = %d", $first_track_nid, $duplicate_track->track_nid);
         // Delete duplicate the tracks
-        db_query("DELETE FROM {station_log_track} WHERE track_nid = %d", $duplicate_track->track_nid);
+        //db_query("DELETE FROM {station_log_track} WHERE track_nid = %d", $duplicate_track->track_nid);
       }
       // Collect the track nids for display, the first nid is kept while others are deleted
       $track_nids[] = $duplicate_track->track_nid;
