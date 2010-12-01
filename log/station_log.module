@@ -1,5 +1,5 @@
 <?php
-// $Id: station_log.module,v 1.24 2010/01/28 00:00:00 thumb Exp $
+// $Id: station_log.module,v 1.24 2010/12/01 00:00:00 thumb Exp $
 
 /*
  1) Update recently played block list via Ajax.
@@ -99,6 +99,13 @@ function station_log_menu() {
     'title' => 'Duplicate Station Log Tracks',
     'description' => '',
     'page callback' => 'station_log_reports_duped_tracks_page',
+    'access arguments' => array('view station log reports'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  $items['station/log/reports/missing_mbid'] = array(
+    'title' => 'Station Catalog Albums Missing a MusicBrainz.org ID',
+    'description' => '',
+    'page callback' => 'station_log_reports_albums_mbid_page',
     'access arguments' => array('view station log reports'),
     'type' => MENU_NORMAL_ITEM,
   );
@@ -444,6 +451,19 @@ function station_log_reports_page() {
               '%albums' => format_plural($stat_albums, '1 unique album', '@count albums'),
           )) . '</p>';
 
+  // Get albums from the catalog without MusicBrainz.org IDs
+  $missing_mbid = db_result(db_query("SELECT COUNT(album) AS missing_mbid FROM {station_catalog}
+      WHERE mb_release_id = ''  OR mb_release_id IS NULL"));
+
+  if ($missing_mbid > 0) {
+    $items[] = t("%missing_mbid do not have MusicBrainz.org IDs.", array(
+        '%missing_mbid' => format_plural($missing_mbid, '1 album', '@count albums')))
+        . " <a href=\"$base_url/station/log/reports/missing_mbid\">" . t('Fix them!') . "</a>";
+  }
+  else {
+    $items[] = t('All albums have a MusicBrainz.org ID!');
+  }
+
   // Get albums from the catalog without Amazon.com ASIN values
   $missing_asin = db_result(db_query("SELECT COUNT(album) AS missing_asin FROM {station_catalog}
       WHERE asin = ''  OR asin IS NULL"));
@@ -590,6 +610,19 @@ function station_log_reports_duped_tracks_page() {
   }
   if (count($track_nids) == 0) {
     $items[] = t('No duplicates tracks found!');
+  }
+  return theme_item_list($items) . theme('pager');
+}
+
+/**
+ * Display a list of station_catalog albums without MusicBrainz.org ID values.
+ */
+function station_log_reports_albums_mbid_page() {
+  $missing_mbid = pager_query("SELECT nid, artist, album FROM {station_catalog}
+      WHERE mb_release_id = ''  OR mb_release_id IS NULL ORDER BY artist", 100);
+
+  while ($album = db_fetch_object($missing_mbid)) {
+    $items[] = "<a href=\"$base_url/node/$album->nid/edit\">$album->album</a> - $album->artist";
   }
   return theme_item_list($items) . theme('pager');
 }
