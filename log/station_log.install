@@ -10,8 +10,6 @@ function station_log_install() {
 
 /**
  * Implementation of hook_schema().
- * @todo Check whether nid need's auto_increment, set index properly
- * @todo Check schedule_nid value.
  */
 function station_log_schema() {
   $schema['station_log'] = array(
