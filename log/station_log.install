@@ -9,13 +9,6 @@ function station_log_install() {
 }
 
 /**
- * Implementation of hook_uninstall().
- */
-function station_log_uninstall() {
-  drupal_uninstall_schema('station_log');
-}
-
-/**
  * Implementation of hook_schema().
  * @todo Check whether nid need's auto_increment, set index properly
  * @todo Check schedule_nid value.
@@ -38,8 +31,8 @@ function station_log_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
-      'track_nid' => array(
-        'description' => t("The played track's nid."),
+      'track_id' => array(
+        'description' => t("The played track's id."),
         'type' => 'int',
         'unsigned' => TRUE,
         'not null' => TRUE,
@@ -52,8 +45,8 @@ function station_log_schema() {
   $schema['station_log_track'] = array(
     'description' => t('Store tracks played, relate them to catalog items.'),
     'fields' => array(
-      'track_nid' => array(
-        'description' => t("The track's {node}.nid."),
+      'track_id' => array(
+        'description' => t("The track's id."),
         'type' => 'serial',
         'unsigned' => TRUE,
         'not null' => TRUE,
@@ -76,7 +69,7 @@ function station_log_schema() {
     'indexes' => array(
       'station_log_track_title' => array('title'),
     ),
-    'primary key' => array('track_nid'),
+    'primary key' => array('track_id'),
   );
   return $schema;
 }
