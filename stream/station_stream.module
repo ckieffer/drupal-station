@@ -1,0 +1,113 @@
+<?php
+
+// $Id: station_stream.module,v 1.10.2.1 2010/12/02 23:04:42 thumb Exp $
+
+/**
+ * Implementation of hook_help().
+ */
+function station_stream_log_help($path, $arg) {
+  switch ($path) {
+    case 'admin/settings/station/log':
+      return t("Retrieves track metadata from streaming audio servers.");
+  }
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function station_stream_perm() {
+  return array(
+    'administer stream',
+    'access stream content',
+  );
+}
+
+/**
+ * Implementation of hook_access().
+ */
+function station_stream_access($op, $node, $account) {
+  if (user_access('administer station stream', $account)) {
+    return TRUE;
+  }
+}
+
+/**
+ * Implementation of hook_menu().
+ */
+function station_stream_menu() {
+  $items['admin/settings/station/stream'] = array(
+    'title' => 'Stream',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('station_stream_admin_settings'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'station_stream.admin.inc',
+    'type' => MENU_LOCAL_TASK
+  );
+  return $items;
+}
+
+/**
+ * Get streaming server metadata from its XML stats page.
+ *
+ * @return
+ *   An XML object containing recently played songs.
+ */
+function station_stream_get_tracks() {
+  $stream_type = variable_get('station_stream_type', '');
+  require_once dirname(__FILE__) . "/includes/station_stream.$stream_type.inc";
+  return $data;
+}
+
+/**
+ * Associate an HTTP error message with its code and display a message. This assumes various servers
+ * return the same HTTP status codes.
+ *
+ * @param
+ *   An HTTP server response code (ex. 403)
+ */
+function station_stream_error($code) {
+  // Server response codes (HTTP), 200 OK
+  switch ((int) $code) {
+    case 203:
+      $msg = 'Partial Information';
+      break;
+    case 204:
+      $msg = 'No Response';
+      break;
+    case 401:
+      $msg = 'Unauthorized';
+      break;
+    case 403:
+      $msg = 'Forbidden';
+      break;
+    case 404:
+      $msg = 'Not found';
+      break;
+    case 500:
+      $msg = 'Internal Error';
+      break;
+    case 503:
+      $msg = 'Gateway timout';
+      break;
+    default:
+      $msg = 'Unknown error';
+      break;
+  }
+  $message  = t('The Station Stream module may not be configured properly or the server is not responding.');
+  $message .= t(" ($code: $msg)");
+  station_stream_error_display($message);
+}
+
+/**
+ * Add error messages to the watchdog and possibly display them to the screen.
+ *
+ * @param
+ *   An error message to add to the watchdog and possibly display to screen.
+ */
+function station_stream_error_display($message) {
+  $display_message = variable_get('station_stream_error_handling', 0);
+  watchdog('station_stream', $message, NULL, WATCHDOG_INFO);
+  if ($display_message) {
+    drupal_set_message($message, 'error', true);
+  }
+}
