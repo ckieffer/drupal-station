@@ -1,5 +1,5 @@
 <?php
-// $Id: station_log.module,v 1.24 2010/12/03 00:00:00 thumb Exp $
+// $Id: station_log.module,v 1.24 2010/12/31 00:00:00 thumb Exp $
 
 /*
  1) Provide a form to manually add/edit log items.
@@ -119,13 +119,6 @@ function station_log_menu() {
 }
 
 /**
- * Implementation hook_cron().
- */
-function station_log_cron() {
-
-}
-
-/**
  * Get the most recent timestamp for logged tracks.
  *
  * @param
@@ -154,12 +147,12 @@ function station_log_get_tracks() {
   foreach ($history->SONG as $key => $track) {
     $parts = explode(' - ', $track->TITLE);
     $tracks[(int) $track->PLAYEDAT] = array(
-        'artist' => trim($parts[0]),
-        'title' => trim($parts[1]),
-        'album' => trim($parts[2]),
-        'label' => trim($parts[3]),
-        'raw' => (string) $track->TITLE,
-      );
+      'artist' => trim($parts[0]),
+      'title' => trim($parts[1]),
+      'album' => trim($parts[2]),
+      'label' => trim($parts[3]),
+      'raw' => (string) $track->TITLE,
+    );
   }
   return $tracks;
 }
@@ -345,10 +338,10 @@ function station_log_block($op = 'list', $delta = 0) {
 function station_log_get_recent_tracks($limit, $unit) {
   $args[] = variable_get('station_schedule_default', 0);
   $query = "SELECT l.timestamp, lt.title, c.artist, c.album, c.label, c.asin
-      FROM {station_log} l
-      JOIN {station_log_track} lt ON lt.track_id = l.track_id
-      JOIN {station_catalog} c ON c.nid = lt.catalog_nid
-      WHERE l.schedule_nid = %d";
+    FROM {station_log} l
+    JOIN {station_log_track} lt ON lt.track_id = l.track_id
+    JOIN {station_catalog} c ON c.nid = lt.catalog_nid
+    WHERE l.schedule_nid = %d";
   $order_by = "ORDER BY l.timestamp DESC";
   if ($unit == 'hours') {
     $args[] = (mktime() - ($limit * 3600));
@@ -460,20 +453,20 @@ function station_log_reports_page() {
   $stat_albums = db_result(db_query("SELECT COUNT(*) AS albums FROM {station_catalog}"));
 
   $page .= '<p>' . t("%tracks have been played since %start_date. That's %unique_tracks from %albums.",  array(
-              '%tracks' => format_plural($stat_tracks, '1 track', '@count tracks'),
-              '%start_date' => format_date($stat_start_date, 'long', 0),
-              '%unique_tracks' => format_plural($stat_unique_tracks, '1 unique track', '@count unique tracks'),
-              '%albums' => format_plural($stat_albums, '1 unique album', '@count albums'),
-          )) . '</p>';
+    '%tracks' => format_plural($stat_tracks, '1 track', '@count tracks'),
+    '%start_date' => format_date($stat_start_date, 'long', 0),
+    '%unique_tracks' => format_plural($stat_unique_tracks, '1 unique track', '@count unique tracks'),
+    '%albums' => format_plural($stat_albums, '1 unique album', '@count albums'),
+  )) . '</p>';
 
   // Get albums from the catalog without MusicBrainz.org IDs
   $missing_mbid = db_result(db_query("SELECT COUNT(album) AS missing_mbid FROM {station_catalog}
-      WHERE mb_release_id = ''  OR mb_release_id IS NULL"));
+    WHERE mb_release_id = ''  OR mb_release_id IS NULL"));
 
   if ($missing_mbid > 0) {
     $items[] = t("%missing_mbid do not have MusicBrainz.org IDs.", array(
-        '%missing_mbid' => format_plural($missing_mbid, '1 album', '@count albums')))
-        . " <a href=\"$base_url/station/log/reports/missing_mbid\">" . t('Fix them!') . "</a>";
+      '%missing_mbid' => format_plural($missing_mbid, '1 album', '@count albums')))
+      . " <a href=\"$base_url/station/log/reports/missing_mbid\">" . t('Fix them!') . "</a>";
   }
   else {
     $items[] = t('All albums have a MusicBrainz.org ID!');
@@ -481,12 +474,12 @@ function station_log_reports_page() {
 
   // Get albums from the catalog without Amazon.com ASIN values
   $missing_asin = db_result(db_query("SELECT COUNT(album) AS missing_asin FROM {station_catalog}
-      WHERE asin = ''  OR asin IS NULL"));
+    WHERE asin = ''  OR asin IS NULL"));
 
   if ($missing_asin > 0) {
     $items[] = t("%missing_asin do not have ASIN values.", array(
-        '%missing_asin' => format_plural($missing_asin, '1 album', '@count albums')))
-        . " <a href=\"$base_url/station/log/reports/missing_asin\">" . t('Fix them!') . "</a>";
+      '%missing_asin' => format_plural($missing_asin, '1 album', '@count albums')))
+      . " <a href=\"$base_url/station/log/reports/missing_asin\">" . t('Fix them!') . "</a>";
   }
   else {
     $items[] = t('All albums have an ASIN!');
@@ -500,7 +493,7 @@ function station_log_reports_page() {
 
   if ($duplicate_albums > 0) {
     $items[] = t("Albums with duplicates found.")
-        . " <a href=\"$base_url/station/log/reports/duplicate_albums\">" . t('Fix them!') . "</a>";
+      . " <a href=\"$base_url/station/log/reports/duplicate_albums\">" . t('Fix them!') . "</a>";
   }
   else {
     $items[] = t('No duplicate albums found!');
@@ -514,7 +507,7 @@ function station_log_reports_page() {
 
   if ($duplicate_tracks > 0) {
     $items[] = t("Tracks with duplicates found.")
-        . " <a href=\"$base_url/station/log/reports/duplicate_tracks\">" . t('Fix them!') . "</a>";
+      . " <a href=\"$base_url/station/log/reports/duplicate_tracks\">" . t('Fix them!') . "</a>";
   }
   else {
     $items[] = t('No duplicate tracks found!');
@@ -632,7 +625,7 @@ function station_log_reports_duped_tracks_page() {
  */
 function station_log_reports_albums_mbid_page() {
   $missing_mbid = pager_query("SELECT nid, artist, album FROM {station_catalog}
-      WHERE mb_release_id = ''  OR mb_release_id IS NULL ORDER BY artist", 100);
+    WHERE mb_release_id = ''  OR mb_release_id IS NULL ORDER BY artist", 100);
 
   while ($album = db_fetch_object($missing_mbid)) {
     $items[] = "<a href=\"$base_url/node/$album->nid/edit\">$album->album</a> - $album->artist";
@@ -645,7 +638,7 @@ function station_log_reports_albums_mbid_page() {
  */
 function station_log_reports_albums_asin_page() {
   $missing_asin = pager_query("SELECT nid, artist, album FROM {station_catalog}
-      WHERE asin = ''  OR asin IS NULL ORDER BY artist", 100);
+    WHERE asin = ''  OR asin IS NULL ORDER BY artist", 100);
 
   while ($album = db_fetch_object($missing_asin)) {
     $items[] = "<a href=\"$base_url/node/$album->nid/edit\">$album->album</a> - $album->artist";
